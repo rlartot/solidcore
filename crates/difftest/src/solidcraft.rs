@@ -467,6 +467,9 @@ pub struct Expect {
     /// Enclosed volume.
     #[serde(default)]
     pub volume: Option<VolumeExpect>,
+    /// Exactly this many faces on `result` (counted from the analytic shape).
+    #[serde(default)]
+    pub faces: Option<usize>,
     /// At most this many faces on cylinders.
     #[serde(default)]
     pub cylinder_faces_max: Option<usize>,
@@ -1480,7 +1483,7 @@ pub fn run_rust(case: &Case) -> Run {
 /// One expectation checked.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Check {
-    /// `lumps`, `volume`, `cylinder_faces_max`, `sheet_corner`.
+    /// `lumps`, `volume`, `faces`, `cylinder_faces_max`, `sheet_corner`.
     pub name: &'static str,
     /// `pass`, `fail` or `unchecked`.
     pub status: &'static str,
@@ -1509,6 +1512,13 @@ pub fn checks(e: &Expect, m: &Measured) -> Vec<Check> {
                 "expected {} +- {}, got {} (off by {err})",
                 v.value, v.tol, m.volume
             ),
+        });
+    }
+    if let Some(n) = e.faces {
+        out.push(Check {
+            name: "faces",
+            status: pass(m.topology[0] == n),
+            detail: format!("expected {n}, got {}", m.topology[0]),
         });
     }
     if let Some(n) = e.cylinder_faces_max {
@@ -2048,6 +2058,7 @@ mod tests {
                 tol: 0.27,
                 formula: String::new(),
             }),
+            faces: None,
             cylinder_faces_max: None,
             sheet_corner: None,
         };
@@ -2085,6 +2096,21 @@ mod tests {
         };
         assert_eq!(verdict(&faces, &Run::Done(split)).0, "FAIL");
         assert_eq!(verdict(&faces, &Run::Done(empty)).0, "FAIL");
+        // `faces` is exact: too few and too many both fail.
+        let exact = Expect {
+            faces: Some(4),
+            ..e.clone()
+        };
+        assert_eq!(verdict(&exact, &Run::Done(ok)).0, "PASS");
+        for n in [3, 5] {
+            let off = Measured {
+                topology: [n, 4, 4],
+                ..ok
+            };
+            let (v, c) = verdict(&exact, &Run::Done(off));
+            assert_eq!(v, "FAIL");
+            assert!(c.iter().any(|c| c.name == "faces" && c.status == "fail"));
+        }
         let d = Run::Deferred(Deferral {
             blocked_by: "u".into(),
             symbol: "s".into(),
